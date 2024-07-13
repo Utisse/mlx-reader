@@ -1,0 +1,64 @@
+#!/bin/python3
+import zipfile
+import os
+import shutil
+from bs4 import BeautifulSoup as BS
+from lxml import etree
+import sys
+
+def extract_file_from_zip(zip_path, file_to_extract, extract_to):
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extract(file_to_extract, extract_to)
+    return os.path.join(extract_to, file_to_extract)
+
+
+def process_text(text, is_cdata):
+    if is_cdata:
+        return text  # Se è CDATA, restituisci il testo senza modifiche
+    else:
+        # Aggiungi %% solo alle righe che non sono CDATA
+        processed_lines = [line if line.startswith('%% ') else f'%% {line}' for line in text.splitlines()]
+        return '\n'.join(processed_lines)
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: mlxreader path/to/file.mlx")
+        return
+    
+    input_path = sys.argv[1]
+    extract_to = 'extracted'
+    file_to_extract = 'matlab/document.xml'
+
+    # Step 1: Estrarre il file XML specifico
+    xml_path = extract_file_from_zip(input_path, file_to_extract, extract_to)
+
+    # Step 2: Leggere il file XML
+    with open(xml_path, 'r', encoding='utf-8') as file:
+        xml_content = file.read()
+    # Step 3: Processare il contenuto del file XML
+    soup = BS(xml_content,'lxml-xml')
+    code_content = []
+    text_content = []
+    for elem in soup.find_all('w:p'):
+        p_style= elem.find('w:pStyle')
+        text = elem.text
+        if p_style:
+            if p_style.get('w:val') == 'code':
+                print("trovato codice",text)
+                text_content.append(process_text(text.strip(), True))
+            elif p_style.get('w:val') == 'heading':
+                print("trovato header",text)
+                text_content.append(process_text(text.strip(), False))
+                code_content.append('\n'.join(text_content))
+
+    # Step 4: Salvare il contenuto processato in un file .m
+    output_path = input_path.replace('.mlx', '.m')
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for line in text_content:
+            f.write(line + '\n')
+
+    # Step 5: Rimuovere la cartella temporanea
+    shutil.rmtree(extract_to)
+
+if __name__ == "__main__":
+    main()
